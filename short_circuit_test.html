@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Short Circuit Test – Transformer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+
+  :root {
+    --bg: #0a0e1a;
+    --panel: #0f1629;
+    --border: #1e3a5f;
+    --accent: #00d4ff;
+    --warn: #ff6b35;
+    --green: #00ff9d;
+    --yellow: #ffd700;
+    --red: #ff2244;
+    --text: #c8dff0;
+    --dim: #4a6a8a;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grid background */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+
+  header {
+    text-align: center;
+    padding: 24px 0 16px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 28px;
+  }
+
+  header h1 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(1.2rem, 4vw, 2rem);
+    font-weight: 900;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    text-shadow: 0 0 20px rgba(0,212,255,0.5);
+  }
+
+  header p {
+    font-size: 0.78rem;
+    color: var(--dim);
+    margin-top: 6px;
+    letter-spacing: 0.08em;
+  }
+
+  /* ── Circuit diagram area ── */
+  .diagram-wrap {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 16px;
+    margin-bottom: 24px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .diagram-wrap::before {
+    content: 'CIRCUIT DIAGRAM';
+    position: absolute; top: 10px; left: 14px;
+    font-size: 0.65rem; letter-spacing: 0.15em;
+    color: var(--dim);
+  }
+
+  svg#circuit {
+    width: 100%;
+    height: auto;
+    display: block;
+    margin-top: 10px;
+  }
+
+  /* Animated current flow */
+  @keyframes flow {
+    from { stroke-dashoffset: 200; }
+    to   { stroke-dashoffset: 0; }
+  }
+
+  .wire-flow {
+    stroke-dasharray: 12 8;
+    animation: flow 0.6s linear infinite;
+    opacity: 0;
+    transition: opacity 0.4s;
+  }
+
+  .wire-flow.active { opacity: 1; }
+
+  @keyframes spark {
+    0%,100% { opacity: 0; transform: scale(0.5); }
+    50%      { opacity: 1; transform: scale(1.4); }
+  }
+
+  .spark { animation: spark 0.25s ease-in-out infinite; display: none; }
+  .spark.active { display: block; }
+
+  @keyframes flicker {
+    0%,100% { opacity:1; } 40% { opacity:0.3; } 60% { opacity:0.8; }
+  }
+
+  /* ── Meters row ── */
+  .meters {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin-bottom: 24px;
+  }
+
+  .meter {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 14px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .meter::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, rgba(0,212,255,0.04) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  .meter-label {
+    font-size: 0.62rem;
+    letter-spacing: 0.14em;
+    color: var(--dim);
+    margin-bottom: 8px;
+  }
+
+  .meter-value {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(1.3rem, 3.5vw, 1.9rem);
+    font-weight: 700;
+    transition: color 0.4s;
+  }
+
+  .meter-unit {
+    font-size: 0.72rem;
+    color: var(--dim);
+    margin-top: 4px;
+  }
+
+  .meter-bar {
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    margin-top: 10px;
+    overflow: hidden;
+  }
+
+  .meter-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    width: 0%;
+    transition: width 0.5s ease, background 0.4s;
+  }
+
+  /* ── Info panels ── */
+  .info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 24px;
+  }
+
+  .info-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+  }
+
+  .info-box h3 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.7rem;
+    color: var(--accent);
+    letter-spacing: 0.12em;
+    margin-bottom: 12px;
+  }
+
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(30,58,95,0.5);
+    font-size: 0.78rem;
+  }
+
+  .info-row:last-child { border-bottom: none; }
+  .info-row span:last-child { color: var(--accent); font-weight: bold; }
+
+  /* ── Steps explanation ── */
+  .steps-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px;
+    margin-bottom: 24px;
+  }
+
+  .steps-box h3 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.72rem;
+    color: var(--accent);
+    letter-spacing: 0.12em;
+    margin-bottom: 14px;
+  }
+
+  .step-item {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 10px;
+    opacity: 0.35;
+    transition: opacity 0.5s, transform 0.3s;
+  }
+
+  .step-item.active {
+    opacity: 1;
+    transform: translateX(4px);
+  }
+
+  .step-num {
+    flex-shrink: 0;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: var(--border);
+    border: 1px solid var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.68rem;
+    color: var(--accent);
+  }
+
+  .step-item.active .step-num {
+    background: var(--accent);
+    color: var(--bg);
+  }
+
+  .step-text {
+    font-size: 0.78rem;
+    line-height: 1.5;
+    color: var(--text);
+    padding-top: 2px;
+  }
+
+  /* ── Controls ── */
+  .controls {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 24px;
+  }
+
+  button {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    padding: 10px 22px;
+    border-radius: 5px;
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    cursor: pointer;
+    transition: all 0.25s;
+  }
+
+  button:hover {
+    background: var(--accent);
+    color: var(--bg);
+    box-shadow: 0 0 18px rgba(0,212,255,0.4);
+  }
+
+  button:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  button.warn-btn {
+    border-color: var(--warn);
+    color: var(--warn);
+  }
+  button.warn-btn:hover {
+    background: var(--warn);
+    color: var(--bg);
+    box-shadow: 0 0 18px rgba(255,107,53,0.4);
+  }
+
+  /* ── Status bar ── */
+  .status-bar {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 16px;
+    font-size: 0.76rem;
+    color: var(--green);
+    letter-spacing: 0.06em;
+    min-height: 38px;
+    transition: color 0.3s;
+  }
+
+  /* ── Oscilloscope ── */
+  .scope-wrap {
+    background: #040a06;
+    border: 1px solid #1a3a1a;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 24px;
+    position: relative;
+  }
+
+  .scope-label {
+    font-size: 0.62rem;
+    color: #2a6a2a;
+    letter-spacing: 0.14em;
+    margin-bottom: 8px;
+  }
+
+  canvas#scope {
+    width: 100%;
+    height: 80px;
+    display: block;
+    border: 1px solid #0d2a0d;
+    border-radius: 4px;
+    background: #020802;
+  }
+
+  /* ── Formula highlight ── */
+  .formula-box {
+    background: rgba(0,212,255,0.05);
+    border: 1px solid rgba(0,212,255,0.2);
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin-top: 10px;
+    font-size: 0.82rem;
+    color: var(--accent);
+    letter-spacing: 0.04em;
+  }
+
+  @keyframes pulse-border {
+    0%,100% { border-color: rgba(0,212,255,0.2); }
+    50%      { border-color: rgba(0,212,255,0.6); }
+  }
+
+  .formula-box.active-calc {
+    animation: pulse-border 1s ease-in-out 3;
+  }
+
+  @media (max-width: 560px) {
+    .meters { grid-template-columns: 1fr 1fr; }
+    .info-grid { grid-template-columns: 1fr; }
+    .meter-value { font-size: 1.3rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>⚡ SHORT CIRCUIT TEST</h1>
+    <p>SINGLE-PHASE TRANSFORMER · INTERACTIVE SIMULATION</p>
+  </header>
+
+  <!-- Circuit Diagram -->
+  <div class="diagram-wrap">
+    <svg id="circuit" viewBox="0 0 820 220" fill="none" xmlns="http://www.w3.org/2000/svg">
+
+      <!-- Static wires -->
+      <!-- Top rail HV side -->
+      <line x1="30" y1="60" x2="180" y2="60" stroke="#1e3a5f" stroke-width="2.5"/>
+      <!-- Bottom rail HV side -->
+      <line x1="30" y1="160" x2="180" y2="160" stroke="#1e3a5f" stroke-width="2.5"/>
+      <!-- Top rail LV side -->
+      <line x1="460" y1="60" x2="620" y2="60" stroke="#1e3a5f" stroke-width="2.5"/>
+      <line x1="620" y1="60" x2="620" y2="80" stroke="#1e3a5f" stroke-width="2.5"/>
+      <!-- Bottom rail LV side -->
+      <line x1="460" y1="160" x2="620" y2="160" stroke="#1e3a5f" stroke-width="2.5"/>
+      <line x1="620" y1="160" x2="620" y2="140" stroke="#1e3a5f" stroke-width="2.5"/>
+      <!-- Short circuit link top–bottom LV -->
+      <line x1="620" y1="80" x2="620" y2="140" stroke="#ff2244" stroke-width="3"/>
+
+      <!-- Animated flow overlays -->
+      <line class="wire-flow" id="f1" x1="30" y1="60" x2="180" y2="60" stroke="#00d4ff" stroke-width="3"/>
+      <line class="wire-flow" id="f2" x1="460" y1="60" x2="620" y2="60" stroke="#00ff9d" stroke-width="3"/>
+      <line class="wire-flow" id="f3" x1="620" y1="160" x2="460" y2="160" stroke="#00ff9d" stroke-width="3"/>
+      <line class="wire-flow" id="f4" x1="180" y1="160" x2="30" y2="160" stroke="#00d4ff" stroke-width="3"/>
+
+      <!-- Variac / Voltage source (left) -->
+      <circle cx="30" cy="110" r="28" stroke="#1e3a5f" stroke-width="2" fill="#0a0e1a"/>
+      <circle id="src-glow" cx="30" cy="110" r="28" stroke="#00d4ff" stroke-width="0" fill="none" opacity="0">
+        <animate attributeName="r" values="28;34;28" dur="1.2s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0.6;0;0.6" dur="1.2s" repeatCount="indefinite"/>
+      </circle>
+      <line x1="30" y1="60" x2="30" y2="82" stroke="#1e3a5f" stroke-width="2"/>
+      <line x1="30" y1="138" x2="30" y2="160" stroke="#1e3a5f" stroke-width="2"/>
+      <!-- ~ symbol -->
+      <path d="M17 108 Q22 100 27 108 Q32 116 37 108 Q42 100 47 108" stroke="#00d4ff" stroke-width="1.8" fill="none" id="src-sym" opacity="0.4"/>
+      <text x="30" y="130" text-anchor="middle" fill="#4a6a8a" font-family="monospace" font-size="9">VARIAC</text>
+
+      <!-- Ammeter -->
+      <circle cx="110" cy="60" r="14" fill="#0f1629" stroke="#ffd700" stroke-width="2"/>
+      <text x="110" y="65" text-anchor="middle" fill="#ffd700" font-family="monospace" font-size="12" font-weight="bold">A</text>
+      <text x="110" y="44" text-anchor="middle" fill="#4a6a8a" font-family="monospace" font-size="8">HV</text>
+
+      <!-- Wattmeter -->
+      <rect x="190" y="44" width="60" height="32" rx="4" fill="#0f1629" stroke="#ff6b35" stroke-width="2"/>
+      <text x="220" y="65" text-anchor="middle" fill="#ff6b35" font-family="monospace" font-size="13" font-weight="bold">W</text>
+
+      <!-- Voltmeter HV side -->
+      <circle cx="280" cy="110" r="14" fill="#0f1629" stroke="#00ff9d" stroke-width="2"/>
+      <text x="280" y="115" text-anchor="middle" fill="#00ff9d" font-family="monospace" font-size="11" font-weight="bold">V</text>
+      <line x1="280" y1="60" x2="280" y2="96" stroke="#1e3a5f" stroke-width="1.5"/>
+      <line x1="280" y1="124" x2="280" y2="160" stroke="#1e3a5f" stroke-width="1.5"/>
+
+      <!-- Transformer body -->
+      <!-- Core -->
+      <rect x="330" y="50" width="120" height="120" rx="6" fill="#0a1020" stroke="#1e3a5f" stroke-width="2"/>
+      <rect x="350" y="70" width="80" height="80" rx="4" fill="#06090f"/>
+      <!-- HV coil -->
+      <g id="hv-coil" stroke="#00d4ff" stroke-width="2" fill="none" opacity="0.6">
+        <path d="M340 80 Q330 88 340 96 Q350 104 340 112 Q330 120 340 128 Q350 136 340 144"/>
+        <path d="M345 80 Q355 88 345 96 Q335 104 345 112 Q335 120 345 128 Q335 136 345 144"/>
+      </g>
+      <!-- LV coil -->
+      <g id="lv-coil" stroke="#00ff9d" stroke-width="2" fill="none" opacity="0.6">
+        <path d="M435 80 Q425 88 435 96 Q445 104 435 112 Q425 120 435 128 Q445 136 435 144"/>
+        <path d="M440 80 Q450 88 440 96 Q430 104 440 112 Q430 120 440 128 Q450 136 440 144"/>
+      </g>
+      <!-- Core lines -->
+      <line x1="360" y1="70" x2="360" y2="150" stroke="#162840" stroke-width="3"/>
+      <line x1="380" y1="70" x2="380" y2="150" stroke="#162840" stroke-width="3"/>
+      <line x1="400" y1="70" x2="400" y2="150" stroke="#162840" stroke-width="3"/>
+      <line x1="420" y1="70" x2="420" y2="150" stroke="#162840" stroke-width="3"/>
+
+      <!-- Transformer label -->
+      <text x="390" y="195" text-anchor="middle" fill="#4a6a8a" font-family="monospace" font-size="9">TRANSFORMER (DUT)</text>
+
+      <!-- Connecting wires transformer to circuit -->
+      <line x1="250" y1="60" x2="330" y2="60" stroke="#1e3a5f" stroke-width="2.5"/>
+      <line x1="250" y1="160" x2="330" y2="160" stroke="#1e3a5f" stroke-width="2.5"/>
+      <line x1="450" y1="60" x2="460" y2="60" stroke="#1e3a5f" stroke-width="2.5"/>
+      <line x1="450" y1="160" x2="460" y2="160" stroke="#1e3a5f" stroke-width="2.5"/>
+
+      <!-- Animated flow through transformer area -->
+      <line class="wire-flow" id="f5" x1="250" y1="60" x2="330" y2="60" stroke="#00d4ff" stroke-width="3"/>
+      <line class="wire-flow" id="f6" x1="450" y1="60" x2="460" y2="60" stroke="#00ff9d" stroke-width="3"/>
+      <line class="wire-flow" id="f7" x1="250" y1="160" x2="330" y2="160" stroke="#00d4ff" stroke-width="3"/>
+      <line class="wire-flow" id="f8" x1="460" y1="160" x2="450" y2="160" stroke="#00ff9d" stroke-width="3"/>
+
+      <!-- Short circuit highlight -->
+      <rect x="608" y="68" width="24" height="84" rx="4" fill="rgba(255,34,68,0.08)" stroke="#ff2244" stroke-width="1.5" id="sc-box" opacity="0"/>
+      <text x="645" y="115" fill="#ff2244" font-family="monospace" font-size="9" id="sc-label" opacity="0">SHORT</text>
+
+      <!-- Spark at short -->
+      <g class="spark" id="spark1" transform="translate(618,105)">
+        <line x1="-6" y1="-6" x2="6" y2="6" stroke="#ff2244" stroke-width="2"/>
+        <line x1="6" y1="-6" x2="-6" y2="6" stroke="#ffd700" stroke-width="2"/>
+        <line x1="0" y1="-8" x2="0" y2="8" stroke="#ff6b35" stroke-width="1.5"/>
+        <line x1="-8" y1="0" x2="8" y2="0" stroke="#ff6b35" stroke-width="1.5"/>
+      </g>
+
+      <!-- Labels -->
+      <text x="180" y="195" text-anchor="middle" fill="#4a6a8a" font-family="monospace" font-size="9">HV SIDE (PRIMARY)</text>
+      <text x="600" y="195" text-anchor="middle" fill="#4a6a8a" font-family="monospace" font-size="9">LV SIDE (SECONDARY)</text>
+    </svg>
+  </div>
+
+  <!-- Meters -->
+  <div class="meters">
+    <div class="meter">
+      <div class="meter-label">APPLIED VOLTAGE (VSC)</div>
+      <div class="meter-value" id="v-val" style="color:#00ff9d">0.0</div>
+      <div class="meter-unit">VOLTS</div>
+      <div class="meter-bar"><div class="meter-bar-fill" id="v-bar" style="background:var(--green)"></div></div>
+    </div>
+    <div class="meter">
+      <div class="meter-label">SHORT CIRCUIT CURRENT (ISC)</div>
+      <div class="meter-value" id="i-val" style="color:#00d4ff">0.0</div>
+      <div class="meter-unit">AMPERES</div>
+      <div class="meter-bar"><div class="meter-bar-fill" id="i-bar" style="background:var(--accent)"></div></div>
+    </div>
+    <div class="meter">
+      <div class="meter-label">POWER INPUT (WSC)</div>
+      <div class="meter-value" id="w-val" style="color:#ff6b35">0.0</div>
+      <div class="meter-unit">WATTS</div>
+      <div class="meter-bar"><div class="meter-bar-fill" id="w-bar" style="background:var(--warn)"></div></div>
+    </div>
+  </div>
+
+  <!-- Oscilloscope -->
+  <div class="scope-wrap">
+    <div class="scope-label">▶ OSCILLOSCOPE — CURRENT WAVEFORM (ISC)</div>
+    <canvas id="scope" width="820" height="80"></canvas>
+  </div>
+
+  <!-- Results & Formulas -->
+  <div class="info-grid">
+    <div class="info-box">
+      <h3>⚙ CALCULATED PARAMETERS</h3>
+      <div class="info-row"><span>Req (Equiv. Resistance)</span><span id="req-val">— Ω</span></div>
+      <div class="info-row"><span>Zeq (Equiv. Impedance)</span><span id="zeq-val">— Ω</span></div>
+      <div class="info-row"><span>Xeq (Equiv. Reactance)</span><span id="xeq-val">— Ω</span></div>
+      <div class="info-row"><span>Power Factor (cos φ)</span><span id="pf-val">—</span></div>
+      <div class="info-row"><span>Cu Loss (Full Load)</span><span id="cu-val">— W</span></div>
+    </div>
+    <div class="info-box">
+      <h3>📋 TEST CONDITIONS</h3>
+      <div class="info-row"><span>Transformer Rating</span><span>5 kVA</span></div>
+      <div class="info-row"><span>HV (Primary)</span><span>230 V</span></div>
+      <div class="info-row"><span>LV (Secondary)</span><span>115 V</span></div>
+      <div class="info-row"><span>Full Load Current</span><span>21.7 A</span></div>
+      <div class="info-row"><span>Secondary</span><span>SHORTED</span></div>
+    </div>
+  </div>
+
+  <!-- Formula -->
+  <div class="formula-box" id="formula-box">
+    Zeq = Vsc / Isc &nbsp;|&nbsp; Req = Wsc / Isc² &nbsp;|&nbsp; Xeq = √(Zeq² − Req²) &nbsp;|&nbsp; cos φ = Wsc / (Vsc × Isc)
+  </div>
+
+  <!-- Steps -->
+  <div class="steps-box" style="margin-top:16px">
+    <h3>🔬 TEST PROCEDURE</h3>
+    <div class="step-item" id="step-0">
+      <div class="step-num">1</div>
+      <div class="step-text">Short-circuit the LV (secondary) winding with a thick conductor or shorting bar.</div>
+    </div>
+    <div class="step-item" id="step-1">
+      <div class="step-num">2</div>
+      <div class="step-text">Connect Ammeter, Voltmeter, and Wattmeter on the HV (primary) side via a variac.</div>
+    </div>
+    <div class="step-item" id="step-2">
+      <div class="step-num">3</div>
+      <div class="step-text">Gradually increase the supply voltage from zero until rated full-load current flows.</div>
+    </div>
+    <div class="step-item" id="step-3">
+      <div class="step-num">4</div>
+      <div class="step-text">Record Vsc, Isc, and Wsc at rated current. The Vsc ≈ 5–10% of rated voltage.</div>
+    </div>
+    <div class="step-item" id="step-4">
+      <div class="step-num">5</div>
+      <div class="step-text">Calculate Req, Zeq, Xeq, and power factor from measured values. This gives copper loss at full load.</div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <button id="btn-start">▶ START TEST</button>
+    <button id="btn-step" disabled>⏭ NEXT STEP</button>
+    <button id="btn-auto" disabled>⚡ AUTO RUN</button>
+    <button id="btn-reset" class="warn-btn">↺ RESET</button>
+  </div>
+
+  <!-- Status -->
+  <div class="status-bar" id="status">
+    SYSTEM READY — Press START TEST to begin simulation
+  </div>
+</div>
+
+<script>
+  // ── State ──
+  const RATED_I = 21.74; // A (5000/230)
+  const RATED_V = 230;
+
+  // Test data ramps to these final values:
+  const FINAL = { v: 11.5, i: 21.74, w: 186 };
+
+  let phase = -1;
+  let autoTimer = null;
+  let scopeTimer = null;
+  let rampTimer = null;
+  let currentRamp = { v: 0, i: 0, w: 0 };
+  let scopeOffset = 0;
+  let scopeAmp = 0;
+  let testRunning = false;
+
+  // DOM refs
+  const vVal = document.getElementById('v-val');
+  const iVal = document.getElementById('i-val');
+  const wVal = document.getElementById('w-val');
+  const vBar = document.getElementById('v-bar');
+  const iBar = document.getElementById('i-bar');
+  const wBar = document.getElementById('w-bar');
+  const reqEl = document.getElementById('req-val');
+  const zeqEl = document.getElementById('zeq-val');
+  const xeqEl = document.getElementById('xeq-val');
+  const pfEl  = document.getElementById('pf-val');
+  const cuEl  = document.getElementById('cu-val');
+  const statusEl = document.getElementById('status');
+  const scopeCanvas = document.getElementById('scope');
+  const ctx2 = scopeCanvas.getContext('2d');
+  const formulaBox = document.getElementById('formula-box');
+
+  const flows = ['f1','f2','f3','f4','f5','f6','f7','f8'];
+  const spark1 = document.getElementById('spark1');
+  const scBox = document.getElementById('sc-box');
+  const scLabel = document.getElementById('sc-label');
+  const srcSym = document.getElementById('src-sym');
+
+  const steps = ['step-0','step-1','step-2','step-3','step-4'];
+
+  const btnStart = document.getElementById('btn-start');
+  const btnStep  = document.getElementById('btn-step');
+  const btnAuto  = document.getElementById('btn-auto');
+  const btnReset = document.getElementById('btn-reset');
+
+  // ── Oscilloscope ──
+  function drawScope() {
+    const W = scopeCanvas.width;
+    const H = scopeCanvas.height;
+    ctx2.clearRect(0, 0, W, H);
+
+    // Grid
+    ctx2.strokeStyle = 'rgba(0,80,0,0.3)';
+    ctx2.lineWidth = 0.5;
+    for (let x = 0; x < W; x += 40) { ctx2.beginPath(); ctx2.moveTo(x,0); ctx2.lineTo(x,H); ctx2.stroke(); }
+    for (let y = 0; y < H; y += 20) { ctx2.beginPath(); ctx2.moveTo(0,y); ctx2.lineTo(W,y); ctx2.stroke(); }
+    ctx2.strokeStyle = 'rgba(0,120,0,0.5)';
+    ctx2.beginPath(); ctx2.moveTo(0,H/2); ctx2.lineTo(W,H/2); ctx2.stroke();
+
+    if (scopeAmp < 0.5) return;
+
+    // Sine wave
+    ctx2.strokeStyle = `rgba(0,255,80,${Math.min(1, scopeAmp/28)})`;
+    ctx2.lineWidth = 1.8;
+    ctx2.shadowColor = '#00ff50';
+    ctx2.shadowBlur = 6;
+    ctx2.beginPath();
+    for (let x = 0; x <= W; x++) {
+      const t = (x + scopeOffset) / W * Math.PI * 6;
+      const y = H/2 - Math.sin(t) * (scopeAmp / RATED_I) * (H/2 - 6);
+      x === 0 ? ctx2.moveTo(x, y) : ctx2.lineTo(x, y);
+    }
+    ctx2.stroke();
+    ctx2.shadowBlur = 0;
+  }
+
+  function startScope() {
+    if (scopeTimer) return;
+    scopeTimer = setInterval(() => {
+      scopeOffset += 3;
+      drawScope();
+    }, 30);
+  }
+
+  // ── Ramp meters ──
+  function rampTo(target, duration, onDone) {
+    clearInterval(rampTimer);
+    const start = { ...currentRamp };
+    const steps = Math.ceil(duration / 40);
+    let s = 0;
+    rampTimer = setInterval(() => {
+      s++;
+      const t = s / steps;
+      const ease = t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
+      currentRamp.v = start.v + (target.v - start.v) * ease;
+      currentRamp.i = start.i + (target.i - start.i) * ease;
+      currentRamp.w = start.w + (target.w - start.w) * ease;
+      scopeAmp = currentRamp.i;
+      updateMeters();
+      if (s >= steps) {
+        clearInterval(rampTimer);
+        currentRamp = { ...target };
+        if (onDone) onDone();
+      }
+    }, 40);
+  }
+
+  function updateMeters() {
+    const v = currentRamp.v, i = currentRamp.i, w = currentRamp.w;
+    vVal.textContent = v.toFixed(1);
+    iVal.textContent = i.toFixed(2);
+    wVal.textContent = w.toFixed(1);
+
+    vBar.style.width = Math.min(100, (v / 20) * 100) + '%';
+    iBar.style.width = Math.min(100, (i / RATED_I) * 100) + '%';
+    wBar.style.width = Math.min(100, (w / 250) * 100) + '%';
+
+    // Color thresholds
+    const pct = i / RATED_I;
+    vVal.style.color = pct > 0.95 ? 'var(--warn)' : 'var(--green)';
+    iVal.style.color = pct > 0.95 ? 'var(--red)' : 'var(--accent)';
+
+    if (i > 1 && v > 0.5) {
+      const zeq = v / i;
+      const req = w / (i * i);
+      const xeq = Math.sqrt(Math.max(0, zeq*zeq - req*req));
+      const pf  = w / (v * i);
+      reqEl.textContent = req.toFixed(3) + ' Ω';
+      zeqEl.textContent = zeq.toFixed(3) + ' Ω';
+      xeqEl.textContent = xeq.toFixed(3) + ' Ω';
+      pfEl.textContent  = pf.toFixed(3);
+      cuEl.textContent  = w.toFixed(1) + ' W';
+
+      formulaBox.classList.add('active-calc');
+      setTimeout(() => formulaBox.classList.remove('active-calc'), 3100);
+    }
+  }
+
+  function activateFlow(on) {
+    flows.forEach(id => {
+      const el = document.getElementById(id);
+      if (on) el.classList.add('active'); else el.classList.remove('active');
+    });
+    spark1.classList.toggle('active', on);
+    scBox.setAttribute('opacity', on ? '1' : '0');
+    scLabel.setAttribute('opacity', on ? '1' : '0');
+    srcSym.setAttribute('opacity', on ? '1' : '0.4');
+  }
+
+  function highlightStep(n) {
+    steps.forEach((id, idx) => {
+      document.getElementById(id).classList.toggle('active', idx === n);
+    });
+  }
+
+  function setStatus(msg, color = 'var(--green)') {
+    statusEl.textContent = msg;
+    statusEl.style.color = color;
+  }
+
+  // ── Phase logic ──
+  const phaseData = [
+    {
+      step: 0,
+      status: '⚙ STEP 1/5 — Secondary winding shorted. Confirming circuit continuity...',
+      action: () => {
+        scBox.setAttribute('opacity', '1');
+        scLabel.setAttribute('opacity', '1');
+      }
+    },
+    {
+      step: 1,
+      status: '🔌 STEP 2/5 — Instruments connected: Ammeter (HV), Wattmeter, Voltmeter. Variac at zero.',
+      action: () => {}
+    },
+    {
+      step: 2,
+      status: '📈 STEP 3/5 — Raising supply voltage... watching for rated current.',
+      action: () => {
+        activateFlow(true);
+        startScope();
+        rampTo({ v: FINAL.v * 0.5, i: FINAL.i * 0.5, w: FINAL.w * 0.5 }, 1800);
+      }
+    },
+    {
+      step: 3,
+      status: '✅ STEP 4/5 — Rated current reached! Recording Vsc, Isc, Wsc.',
+      action: () => {
+        rampTo(FINAL, 1200, () => {
+          setStatus('📊 MEASUREMENTS LOCKED — Vsc = 11.5 V  |  Isc = 21.74 A  |  Wsc = 186 W', 'var(--yellow)');
+        });
+      }
+    },
+    {
+      step: 4,
+      status: '🧮 STEP 5/5 — Computing equivalent circuit parameters from measurements...',
+      action: () => {
+        setTimeout(() => {
+          setStatus('🎉 TEST COMPLETE — Copper loss at full load = 186 W  |  Zeq = 0.529 Ω  |  cos φ = 0.743', 'var(--accent)');
+        }, 1200);
+      }
+    }
+  ];
+
+  function advancePhase() {
+    phase++;
+    if (phase >= phaseData.length) {
+      btnStep.disabled = true;
+      btnAuto.disabled = true;
+      return;
+    }
+    const p = phaseData[phase];
+    highlightStep(p.step);
+    setStatus(p.status);
+    p.action();
+    if (phase >= phaseData.length - 1) {
+      btnStep.disabled = true;
+    }
+  }
+
+  // ── Button handlers ──
+  btnStart.addEventListener('click', () => {
+    btnStart.disabled = true;
+    btnStep.disabled = false;
+    btnAuto.disabled = false;
+    testRunning = true;
+    setStatus('🟢 TEST INITIATED — Secondary winding being shorted...', 'var(--green)');
+    advancePhase();
+  });
+
+  btnStep.addEventListener('click', () => {
+    advancePhase();
+  });
+
+  btnAuto.addEventListener('click', () => {
+    btnAuto.disabled = true;
+    btnStep.disabled = true;
+    const remaining = phaseData.length - 1 - phase;
+    let count = 0;
+    autoTimer = setInterval(() => {
+      advancePhase();
+      count++;
+      if (count >= remaining) clearInterval(autoTimer);
+    }, 2400);
+  });
+
+  btnReset.addEventListener('click', () => {
+    clearInterval(autoTimer);
+    clearInterval(rampTimer);
+    clearInterval(scopeTimer);
+    scopeTimer = null;
+    phase = -1;
+    currentRamp = { v: 0, i: 0, w: 0 };
+    scopeAmp = 0;
+    scopeOffset = 0;
+    testRunning = false;
+
+    activateFlow(false);
+    scBox.setAttribute('opacity', '0');
+    scLabel.setAttribute('opacity', '0');
+    srcSym.setAttribute('opacity', '0.4');
+    updateMeters();
+    drawScope();
+    steps.forEach(id => document.getElementById(id).classList.remove('active'));
+    reqEl.textContent = '— Ω';
+    zeqEl.textContent = '— Ω';
+    xeqEl.textContent = '— Ω';
+    pfEl.textContent = '—';
+    cuEl.textContent = '— W';
+    setStatus('SYSTEM READY — Press START TEST to begin simulation');
+    btnStart.disabled = false;
+    btnStep.disabled = true;
+    btnAuto.disabled = true;
+  });
+
+  // Initial draw
+  drawScope();
+</script>
+</body>
+</html>
